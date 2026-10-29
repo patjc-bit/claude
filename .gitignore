@@ -2,3 +2,4 @@ node_modules/
 *.xlsx
 *.pdf
 __pycache__/
+guardia_nocturno_alternativas/analisis/datos.json
