@@ -65,11 +65,13 @@ base['empresas'].append({'empresa': 'MACOTELA (armados)', 'guardias': base['arma
                          'anual': base['armados'] * PRECIO['MACOTELA'] * 12})
 base['costo'] = sum(e['anual'] for e in base['empresas'])
 
-# Farmacias que pierden el nocturno en cada alternativa
-d['R1'] = d.DA == 'Sí'        # Conservador
-d['R2'] = d.EG_2 == 'Sí'      # Moderado sin ventanilla anticipada
-d['R3'] = d.EF_2 == 'Sí'      # Moderado con ventanilla anticipada
-exp_cols = {1: ('DD', 'DE', 'DF', 'DG'), 2: ('DD_2', 'DE_2', 'DF_2', 'DG_2'), 3: ('DD_2', 'DE_2', 'DF_2', 'DG_2')}
+
+# Farmacias que pierden el nocturno. Alternativa 1 = Sim 1 Conservador; alternativa 2 = Sim 2 Moderado con los
+# parámetros del libro (ventanilla anticipada = Sí). La versión sin ventanilla solo se usa como referencia.
+d['R1'] = d.DA == 'Sí'
+d['R2'] = d.EF_2 == 'Sí'
+d['RSV'] = d.EG_2 == 'Sí'
+exp_cols = {1: ('DD', 'DE', 'DF', 'DG'), 2: ('DD_2', 'DE_2', 'DF_2', 'DG_2')}
 
 
 def conservan(k):
@@ -93,13 +95,12 @@ def conservan(k):
         'venta_for': int((fo & m.str.contains('24 h')).sum()),
         'horario_cdmx': int((cd & (m == 'Revisar horario')).sum()),
         'horario_for': int((fo & (m == 'Revisar horario')).sum()),
-        'robo22': int((m == 'Se quita con ventanilla anticipada').sum()),  # solo aplica en la alternativa 2
         'cdmx': int(cd.sum()), 'for': int(fo.sum()), 'total': len(x),
     }
 
 
 alts = {}
-for k in (1, 2, 3):
+for k in (1, 2):
     x = d[d[f'R{k}']]
     dd, de, df, dg = exp_cols[k]
     ahorro = float(x.p.sum())
@@ -109,7 +110,6 @@ for k in (1, 2, 3):
         'cdmx': int((x.CN == 'CDMX').sum()), 'for': int((x.CN == 'Foránea').sum()),
         'ahorro_cdmx': float(x[x.CN == 'CDMX'].p.sum()), 'ahorro_for': float(x[x.CN == 'Foránea'].p.sum()),
         'ht': int((x.F == 'HT SICHERHEIT').sum()), 'sep': int((x.F == 'SEPSISA').sum()),
-        'ahorro_ht': float(x[x.F == 'HT SICHERHEIT'].p.sum()), 'ahorro_sep': float(x[x.F == 'SEPSISA'].p.sum()),
         'noc_conservan': base['nocturnos'] - len(x),
         'rob_noc': int(x[dd].sum()), 'monto_noc': float(x[de].sum()),
         'rob_22': int(x[df].sum()), 'monto_22': float(x[dg].sum()),
@@ -118,7 +118,11 @@ for k in (1, 2, 3):
         'conservan': conservan(k),
     }
     alts[k]['veces'] = alts[k]['ahorro_periodo'] / alts[k]['monto_noc']
-assert round(alts[1]['costo']) == 118013065 and round(alts[3]['costo']) == 109257865
+assert round(alts[1]['costo']) == 118013065 and round(alts[2]['costo']) == 109257865
+
+sv = d[d.RSV]
+sin_ventanilla = {'guardias': base['guardias'] - len(sv), 'ahorro': float(sv.p.sum()), 'pct': float(sv.p.sum()) / base['costo']}
+assert round(sin_ventanilla['ahorro']) == 30421789
 
 red = {'rob_noc': ROBOS_NOC_RED, 'rob_22': ROBOS_22_RED, 'rob_22_completo': int(d.DH_2.sum())}
 
@@ -139,16 +143,12 @@ def motivo_alt1(m):
     return ', '.join(partes[:-1]) + f' {conj} ' + ult
 
 
-comunes = [fila(r) for r in d[d.R1 & d.R3].itertuples()]
-solo1 = [fila(r, {'rob_noc': int(r.DD), 'monto_noc': float(r.DE)}) for r in d[d.R1 & ~d.R3].itertuples()]
-alt23 = []
-for r in d[~d.R1 & d.R3].itertuples():
-    alt23.append(fila(r, {
-        'motivo1': motivo_alt1(r.CZ), 'rob22_completo': int(r.DH_2), 'rob22_2026': int(r.DF_2),
-        'alternativas': '2 y 3' if r.R2 else 'Solo 3',
-        'venta': r.CU == 'Sí', 'alcaldia_exc': isinstance(r.CV, str), 'bandas': (r.CW or 0) >= 2,
-    }))
-ventanilla = [x for x in alt23 if x['alternativas'] == 'Solo 3']
+comunes = [fila(r) for r in d[d.R1 & d.R2].itertuples()]
+solo1 = [fila(r) for r in d[d.R1 & ~d.R2].itertuples()]
+solo2 = [fila(r, {'motivo1': motivo_alt1(r.CZ), 'rob22_completo': int(r.DH_2), 'rob22_2026': int(r.DF_2),
+                  'ventanilla': 'Sí' if r.CZ_2 == 'Se quita con ventanilla anticipada' else ''})
+         for r in d[~d.R1 & d.R2].itertuples()]
+ventanilla = [x for x in solo2 if x['ventanilla']]
 
 
 def grupo(mask, cols):
@@ -160,27 +160,19 @@ def grupo(mask, cols):
 
 
 grupos = {
-    'solo1': grupo(d.R1 & ~d.R3, ('DD', 'DE', 'DF')),
-    'cambian37': grupo(~d.R1 & d.R3, ('DD_2', 'DE_2', 'DF_2')),
-    'cambian34': grupo(~d.R1 & d.R2, ('DD_2', 'DE_2', 'DF_2')),
-    'ventanilla3': grupo(d.R3 & ~d.R2, ('DD_2', 'DE_2', 'DF_2')),
+    'solo1': grupo(d.R1 & ~d.R2, ('DD', 'DE', 'DF')),
+    'solo2': grupo(~d.R1 & d.R2, ('DD_2', 'DE_2', 'DF_2')),
+    'ventanilla': grupo(d.R2 & ~d.RSV, ('DD_2', 'DE_2', 'DF_2')),
 }
-x37 = d[~d.R1 & d.R3]
-grupos['cambian37'].update({
-    'venta': int((x37.CU == 'Sí').sum()),
-    'alcaldia_sola': int(((x37.CU != 'Sí') & x37.CV.notna()).sum()),
-    'bandas_sola': int(((x37.CU != 'Sí') & x37.CV.isna()).sum()),
-})
 
-# Sensibilidad: se recalcula con las columnas por farmacia (CDMX, robos organizados nocturnos y robos a las 22)
-cd3 = d[(d.CN == 'CDMX') & d.R3]
-G = 22800 * 12
+# Sensibilidad de la alternativa 2, recalculada con las columnas por farmacia de la CDMX
+cd2 = d[(d.CN == 'CDMX') & d.R2]
 sens = {
-    'bandas2_alt3': alts[3]['ahorro'] - cd3[cd3.CW >= 2].p.sum(),
-    'bandas2_alt2': alts[2]['ahorro'] - cd3[(cd3.CW >= 2) & cd3.R2].p.sum(),
-    'robo22': {t: alts[3]['ahorro'] - cd3[(cd3.CU == 'Sí') & (cd3.DH_2 >= t)].p.sum() for t in (2, 3, 4, 5)},
+    'bandas2': alts[2]['ahorro'] - cd2[cd2.CW >= 2].p.sum(),
+    'sin_ventanilla': {t: alts[2]['ahorro'] - cd2[(cd2.CU == 'Sí') & (cd2.DH_2 >= t)].p.sum() for t in (2, 3, 4)},
+    'ventanillas': {t: int(((cd2.CU == 'Sí') & (cd2.DH_2 >= t)).sum()) for t in (2, 3, 4)},
 }
-assert round(sens['robo22'][3]) == round(alts[2]['ahorro'])
+assert round(sens['sin_ventanilla'][3]) == round(sin_ventanilla['ahorro'])
 
 # Variante: alternativa 1 con el criterio de colonia como excepción
 v = d[d.R1 & ~(d.CK == 'Sí')]
@@ -191,8 +183,8 @@ ws1 = wb['Sim 1 Conservador']
 previa = {'sin_bandas_horario': ws1['E239'].value, 'bandas': ws1['E240'].value, 'horario': ws1['E241'].value,
           'estimacion': ws1['E243'].value}
 
-json.dump({'base': base, 'alts': alts, 'red': red, 'comunes': comunes, 'solo1': solo1, 'alt23': alt23,
-           'ventanilla': ventanilla, 'grupos': grupos, 'sens': sens, 'variante1': variante1, 'previa': previa,
-           'revision_horario': int((d.CT == 'Revisar').sum())},
+json.dump({'base': base, 'alts': alts, 'sin_ventanilla': sin_ventanilla, 'red': red, 'comunes': comunes,
+           'solo1': solo1, 'solo2': solo2, 'ventanilla': ventanilla, 'grupos': grupos, 'sens': sens,
+           'variante1': variante1, 'previa': previa, 'revision_horario': int((d.CT == 'Revisar').sum())},
           open(OUT, 'w'), ensure_ascii=False, indent=1, default=float)
 print('ok', OUT)

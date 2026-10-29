@@ -1,8 +1,8 @@
 # Retiro del guardia nocturno: alternativas
 
-Reporte de retiro del guardia nocturno en farmacias, presentado como tres alternativas (conservadora, moderada y moderada con ventanilla a las 22:00) en lugar de fases. Usa los valores finales de `Simulaciones.xlsx` (hojas Sim 1 Conservador y Sim 2 Moderado).
+Reporte de retiro del guardia nocturno en farmacias, presentado como dos alternativas en lugar de fases: la conservadora (hoja Sim 1 Conservador) y la moderada (hoja Sim 2 Moderado, con ventanilla anticipada a las 22:00, como está en los parámetros del libro). Usa los valores finales de `Simulaciones.xlsx`. El caso sin ventanilla anticipada aparece solo como referencia dentro de la alternativa 2.
 
-- `Retiro_guardia_nocturno_alternativas.docx`: reporte (resumen, situación actual, justificación, análisis financiero, alternativas, consideraciones y anexos con las farmacias de cada alternativa).
+- `Retiro_guardia_nocturno_alternativas.docx`: reporte (resumen, situación actual, justificación, análisis financiero, alternativas, consideraciones y anexos con las farmacias que pierden el guardia en cada alternativa).
 - `analisis/`: scripts para reproducirlo.
   - `extract.py` lee los valores calculados del Excel y escribe `datos.json`.
   - `build_doc.js` arma el Word (paquete `docx` de npm) con el formato del reporte anterior.
